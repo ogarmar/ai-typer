@@ -1,0 +1,10 @@
+*.venv
+node_modules/
+.next
+dist/
+.env
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+typer_env/
