@@ -13,21 +13,45 @@ interface Concept {
   definicion: string;
 }
 
+interface GlobalStats {
+  totalGames: number;
+  averageSpeed: number;
+  averageAccuracy: number;
+  lastGames: Array<{
+    date: string;
+    speed: number;
+    accuracy: number;
+  }>;
+}
+
+interface GameStats {
+  wpm: number;
+  accuracy: number;
+  speedDiff: number;
+  accuracyDiff: number;
+  globalStats: GlobalStats;
+}
+
 export default function Page() {
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
-  
+  const [finalStats, setFinalStats] = useState<GameStats | null>(null);
   const [renderTrigger, setRenderTrigger] = useState(0); 
 
   const gameState = useRef({
     gameIndex: 0,
+    startTime: 0,
+    endTime: 0,
     wordIndex: 0,
+    totalCorrectChars: 0,
+    totalTypedChars: 0,
     typedWord: "",
     typedHistory: [] as string[],
     concepts: [] as Concept[],
-    isPlaying: false
+    isPlaying: false,
+    processedEnd: false
   });
 
   const forceUpdate = () => setRenderTrigger(prev => prev + 1);
@@ -55,14 +79,20 @@ export default function Page() {
 
       setIsLoading(true);
       setError(null);
+      setFinalStats(null);
       
       gameState.current = {
         gameIndex: 0,
+        startTime: 0,
+        endTime: 0,
         wordIndex: 0,
+        totalCorrectChars: 0,
+        totalTypedChars: 0,
         typedWord: "",
         typedHistory: [],
         concepts: [],
-        isPlaying: false
+        isPlaying: false,
+        processedEnd: false
       };
       setConcepts([]); 
       
@@ -77,6 +107,7 @@ export default function Page() {
       } else {
         gameState.current.concepts = receivedConcepts;
         gameState.current.isPlaying = true;
+        gameState.current.startTime = Date.now();
         setConcepts(receivedConcepts);
       }
 
@@ -106,6 +137,11 @@ export default function Page() {
         evento.preventDefault();
         if (state.typedWord === "") return; 
 
+        state.totalTypedChars++;
+        if (state.typedWord === currentWord) {
+            state.totalCorrectChars++; 
+        }
+
         state.typedHistory.push(state.typedWord); 
         
         const nextWordIndex = state.wordIndex + 1;
@@ -134,6 +170,11 @@ export default function Page() {
         evento.preventDefault();
         if (state.typedWord.length > currentWord.length + 10) return;
         
+        state.totalTypedChars++;
+        if (state.typedWord.length < currentWord.length && evento.key === currentWord[state.typedWord.length]) {
+            state.totalCorrectChars++;
+        }
+
         state.typedWord += evento.key;
         forceUpdate();
         return;
@@ -143,6 +184,66 @@ export default function Page() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []); 
+
+  useEffect(() => {
+    const state = gameState.current;
+    if (state.isPlaying && concepts.length > 0 && state.gameIndex >= concepts.length && !state.processedEnd) {
+        state.processedEnd = true;
+        state.endTime = Date.now();
+        state.isPlaying = false;
+
+        const minutes = (state.endTime - state.startTime) / 60000;
+        const wpm = minutes > 0 ? Math.round((state.totalCorrectChars / 5) / minutes) : 0;
+        const accuracy = state.totalTypedChars > 0 ? Math.round((state.totalCorrectChars / state.totalTypedChars) * 100) : 0;
+
+        let globalStats: GlobalStats = {
+            totalGames: 0,
+            averageSpeed: 0,
+            averageAccuracy: 0,
+            lastGames: []
+        };
+
+        const cookieMatch = document.cookie.split('; ').find(row => row.startsWith('typefast_stats='));
+        if (cookieMatch) {
+            try {
+                globalStats = JSON.parse(cookieMatch.split('=')[1]);
+            } catch (e) {
+                console.error("Error parsing cookie", e);
+            }
+        }
+
+        const newTotalGames = globalStats.totalGames + 1;
+        const newAvgSpeed = Math.round(globalStats.averageSpeed + ((wpm - globalStats.averageSpeed) / newTotalGames));
+        const newAvgAccuracy = Math.round(globalStats.averageAccuracy + ((accuracy - globalStats.averageAccuracy) / newTotalGames));
+
+        const speedDiff = wpm - globalStats.averageSpeed;
+        const accuracyDiff = accuracy - globalStats.averageAccuracy;
+
+        globalStats.totalGames = newTotalGames;
+        globalStats.averageSpeed = newAvgSpeed;
+        globalStats.averageAccuracy = newAvgAccuracy;
+        
+        globalStats.lastGames.push({
+            date: new Date().toLocaleDateString(),
+            speed: wpm,
+            accuracy: accuracy
+        });
+
+        if (globalStats.lastGames.length > 5) {
+            globalStats.lastGames.shift();
+        }
+
+        document.cookie = `typefast_stats=${JSON.stringify(globalStats)}; path=/; max-age=31536000`;
+
+        setFinalStats({
+            wpm,
+            accuracy,
+            speedDiff,
+            accuracyDiff,
+            globalStats
+        });
+    }
+  }, [renderTrigger, concepts.length]);
 
   const state = gameState.current;
   const gameProgress = concepts.length > 0 ? (state.gameIndex / concepts.length) * 100 : 0;
@@ -235,17 +336,55 @@ export default function Page() {
         </div>
       )}
 
-      {!isLoading && concepts.length > 0 && state.gameIndex >= concepts.length && (
-        <div className="text-center mt-12 p-10 bg-white shadow-2xl rounded-2xl border border-green-100 animate-in zoom-in duration-500">
-          <div className="text-7xl mb-6">🏆</div>
-          <p className="text-4xl font-extrabold text-slate-800 mb-2">All Done!</p>
-          <p className="text-xl text-slate-500 mb-8">You've mastered all the concepts.</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="px-8 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-          >
-            Upload Another
-          </button>
+      {finalStats && (
+        <div className="w-full max-w-2xl mt-8 animate-in zoom-in duration-500">
+            <div className="bg-white p-8 rounded-2xl shadow-2xl border border-slate-200">
+                <div className="text-center mb-8">
+                    <div className="text-6xl mb-4">🏆</div>
+                    <h2 className="text-3xl font-extrabold text-slate-800">Session Complete!</h2>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6 mb-8">
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 text-center">
+                        <p className="text-sm text-slate-500 uppercase tracking-wider font-semibold">Speed</p>
+                        <p className="text-4xl font-bold text-blue-600 mt-2">{finalStats.wpm} <span className="text-lg text-slate-400">WPM</span></p>
+                        <p className={`text-sm mt-2 font-medium ${finalStats.speedDiff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            {finalStats.speedDiff >= 0 ? '▲' : '▼'} {Math.abs(finalStats.speedDiff)} from avg
+                        </p>
+                    </div>
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 text-center">
+                        <p className="text-sm text-slate-500 uppercase tracking-wider font-semibold">Accuracy</p>
+                        <p className="text-4xl font-bold text-purple-600 mt-2">{finalStats.accuracy}<span className="text-lg text-slate-400">%</span></p>
+                        <p className={`text-sm mt-2 font-medium ${finalStats.accuracyDiff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            {finalStats.accuracyDiff >= 0 ? '▲' : '▼'} {Math.abs(finalStats.accuracyDiff)}% from avg
+                        </p>
+                    </div>
+                </div>
+
+                <div className="border-t border-slate-100 pt-6">
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Recent History</h3>
+                    <div className="space-y-3">
+                        {finalStats.globalStats.lastGames.slice().reverse().map((game, i) => (
+                            <div key={i} className="flex justify-between items-center text-sm p-3 hover:bg-slate-50 rounded-lg transition-colors">
+                                <span className="text-slate-500">{game.date}</span>
+                                <div className="flex space-x-6">
+                                    <span className="font-medium text-slate-700">{game.speed} WPM</span>
+                                    <span className="font-medium text-slate-700">{game.accuracy}% Acc</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="mt-8 text-center">
+                    <button 
+                        onClick={() => window.location.reload()} 
+                        className="px-8 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 transition shadow-lg hover:shadow-blue-200 transform hover:-translate-y-0.5 active:translate-y-0"
+                    >
+                        Play Again
+                    </button>
+                </div>
+            </div>
         </div>
       )}
     </main>
