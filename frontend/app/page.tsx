@@ -32,11 +32,18 @@ interface GameStats {
   globalStats: GlobalStats;
 }
 
+// Lista completa de temas
+const THEMES = [
+  'light', 'dark', 'caribbean', 'y2k', 'medieval', 
+  'cyberpunk', 'coffee', 'synthwave', 'matrix', 'dracula'
+];
+
 export default function Page() {
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [theme, setTheme] = useState("light"); 
   const [finalStats, setFinalStats] = useState<GameStats | null>(null);
   const [renderTrigger, setRenderTrigger] = useState(0); 
 
@@ -55,6 +62,18 @@ export default function Page() {
   });
 
   const forceUpdate = () => setRenderTrigger(prev => prev + 1);
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('typefast-theme') || 'light';
+    setTheme(savedTheme);
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  }, []);
+
+  const changeTheme = (newTheme: string) => {
+    setTheme(newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('typefast-theme', newTheme);
+  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -139,7 +158,7 @@ export default function Page() {
 
         state.totalTypedChars++;
         if (state.typedWord === currentWord) {
-            state.totalCorrectChars++; 
+            state.totalCorrectChars++;
         }
 
         state.typedHistory.push(state.typedWord); 
@@ -251,12 +270,28 @@ export default function Page() {
   const currentWords = currentConcept?.definicion?.split(' ').filter(Boolean) || [];
 
   return (
-    <main className="flex min-h-screen flex-col items-center p-8 md:p-16 bg-slate-100 text-slate-800 font-sans">
-      <h1 className="text-5xl font-extrabold mb-8 bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
+    <main className="flex min-h-screen flex-col items-center p-8 md:p-16 bg-background text-foreground font-sans transition-all duration-700">
+      
+      <div 
+        suppressHydrationWarning
+        className="mb-8 flex flex-wrap justify-center gap-2 p-2 bg-card rounded-xl shadow-sm border border-muted max-w-3xl"
+      >
+          {THEMES.map((t) => (
+              <button 
+                  key={t}
+                  onClick={() => changeTheme(t)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all duration-300 ${theme === t ? 'bg-primary text-primary-foreground shadow-md scale-105' : 'text-foreground/60 hover:text-foreground hover:bg-muted/50'}`}
+              >
+                  {t}
+              </button>
+          ))}
+      </div>
+
+      <h1 className="text-5xl font-extrabold mb-8 text-primary tracking-tight">
         TypeFast AI
       </h1>
       
-      <label className={`mb-6 cursor-pointer inline-flex items-center px-6 py-3 bg-white text-blue-600 font-semibold rounded-lg shadow-md border border-slate-200 hover:bg-slate-50 transition-colors ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+      <label className={`mb-6 cursor-pointer inline-flex items-center px-6 py-3 bg-card text-primary font-semibold rounded-xl shadow-md border border-muted hover:bg-muted/20 transition-all duration-300 hover:scale-105 active:scale-95 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}>
         <UploadIcon />
         <span>{concepts.length > 0 ? "Upload new file" : "Upload a file to start"}</span>
         <input 
@@ -269,54 +304,57 @@ export default function Page() {
       </label>
 
       {isLoading && (
-        <div className="w-full max-w-md mt-4 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+        <div className="w-full max-w-md mt-4 p-4 bg-card rounded-xl shadow-sm border border-muted">
             <div className="flex justify-between mb-2">
-                <span className="text-sm font-medium text-slate-700">Analyzing...</span>
-                <span className="text-sm font-medium text-blue-600">{uploadProgress}%</span>
+                <span className="text-sm font-medium text-foreground/70">Analyzing...</span>
+                <span className="text-sm font-medium text-primary">{uploadProgress}%</span>
             </div>
-            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${uploadProgress}%` }}></div>
+            <div className="w-full bg-muted h-2.5 rounded-full overflow-hidden">
+                <div className="bg-primary h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${uploadProgress}%` }}></div>
             </div>
         </div>
       )}
 
       {error && (
-        <div className="w-full max-w-md text-center text-red-600 bg-red-100 p-4 rounded-lg mt-4 border border-red-200">
+        <div className="w-full max-w-md text-center text-red-500 bg-red-100/50 p-4 rounded-xl mt-4 border border-red-200 font-medium">
           <strong>Oops!</strong> {error}
         </div>
       )}
 
       {!isLoading && concepts.length > 0 && state.gameIndex < concepts.length && (
-        <div className="w-full max-w-4xl animate-in fade-in duration-500">
-          <h2 className="text-3xl font-bold mt-4 mb-6 text-slate-800 text-center">
+        <div className="w-full max-w-4xl animate-in fade-in duration-500 slide-in-from-bottom-4">
+          <h2 className="text-3xl font-bold mt-4 mb-6 text-foreground text-center">
             {currentConcept.titulo}
           </h2>
 
-          <div className="w-full p-8 bg-white shadow-xl rounded-xl border border-slate-200 font-mono text-3xl leading-relaxed tracking-wide">
+          <div className="w-full p-8 bg-card shadow-xl rounded-xl border border-muted font-mono text-3xl leading-relaxed tracking-wide transition-colors duration-500">
             {currentWords.map((word, p_idx) => (
               <span key={p_idx} className="mr-4 inline-block mb-2">
                 {word.split('').map((letter, l_idx) => {
-                  let className = "text-slate-300"; 
+                  let className = "text-foreground/20"; 
 
                   if (p_idx === state.wordIndex) {
                     const typedLetter = state.typedWord[l_idx];
-                    if (typedLetter === letter) className = "text-green-600 font-bold"; 
-                    else if (typedLetter !== undefined) className = "text-red-500 bg-red-100 rounded-sm"; 
-                    else className = "text-slate-800"; 
                     
-                    if (l_idx === state.typedWord.length) className += " border-l-2 border-blue-500 animate-pulse";
+                    // USAMOS text-success PARA LA LETRA CORRECTA (VERDE EN LIGHT)
+                    if (typedLetter === letter) className = "text-success font-bold"; 
+                    else if (typedLetter !== undefined) className = "text-red-500 bg-red-100/50 rounded-sm"; 
+                    else className = "text-foreground"; 
+                    
+                    if (l_idx === state.typedWord.length) className += " border-l-2 border-primary animate-pulse";
                   
                   } else if (p_idx < state.wordIndex) {
                     const savedWord = state.typedHistory[p_idx];
                     const savedLetter = savedWord?.[l_idx];
-                    if (savedLetter === letter) className = "text-green-600 font-medium opacity-60";
-                    else className = "text-red-400 bg-red-50 opacity-60";
+                    // USAMOS text-success PARA EL HISTORIAL CORRECTO
+                    if (savedLetter === letter) className = "text-success/60 font-medium";
+                    else className = "text-red-400/50";
                   }
                   return <span key={l_idx} className={className}>{letter}</span>;
                 })}
                 
                 {p_idx === state.wordIndex && state.typedWord.length > word.length && (
-                  <span className="text-red-500 bg-red-100 rounded-sm opacity-80">
+                  <span className="text-red-500 bg-red-100/50 rounded-sm opacity-80">
                     {state.typedWord.slice(word.length)}
                   </span>
                 )}
@@ -325,12 +363,12 @@ export default function Page() {
           </div>
           
           <div className="w-full mt-8">
-            <div className="flex justify-between text-sm text-slate-500 mb-2">
+            <div className="flex justify-between text-sm text-foreground/60 mb-2 font-medium">
                <span>Progress</span>
                <span>{state.gameIndex + 1} / {concepts.length}</span>
             </div>
-            <div className="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
-              <div className="bg-green-500 h-3 transition-all duration-500 ease-out" style={{ width: `${gameProgress}%` }}></div>
+            <div className="w-full bg-muted h-3 rounded-full overflow-hidden">
+              <div className="bg-primary h-3 transition-all duration-500 ease-out" style={{ width: `${gameProgress}%` }}></div>
             </div>
           </div>
         </div>
@@ -338,38 +376,38 @@ export default function Page() {
 
       {finalStats && (
         <div className="w-full max-w-2xl mt-8 animate-in zoom-in duration-500">
-            <div className="bg-white p-8 rounded-2xl shadow-2xl border border-slate-200">
+            <div className="bg-card p-8 rounded-2xl shadow-2xl border border-muted">
                 <div className="text-center mb-8">
-                    <div className="text-6xl mb-4">🏆</div>
-                    <h2 className="text-3xl font-extrabold text-slate-800">Session Complete!</h2>
+                    <div className="text-6xl mb-4 animate-bounce">🏆</div>
+                    <h2 className="text-3xl font-extrabold text-foreground">Session Complete!</h2>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6 mb-8">
-                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 text-center">
-                        <p className="text-sm text-slate-500 uppercase tracking-wider font-semibold">Speed</p>
-                        <p className="text-4xl font-bold text-blue-600 mt-2">{finalStats.wpm} <span className="text-lg text-slate-400">WPM</span></p>
-                        <p className={`text-sm mt-2 font-medium ${finalStats.speedDiff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    <div className="bg-muted/30 p-6 rounded-xl border border-muted text-center hover:bg-muted/50 transition-colors">
+                        <p className="text-sm text-foreground/60 uppercase tracking-wider font-bold">Speed</p>
+                        <p className="text-4xl font-bold text-primary mt-2">{finalStats.wpm} <span className="text-lg text-foreground/40">WPM</span></p>
+                        <p className={`text-sm mt-2 font-bold ${finalStats.speedDiff >= 0 ? 'text-success' : 'text-red-500'}`}>
                             {finalStats.speedDiff >= 0 ? '▲' : '▼'} {Math.abs(finalStats.speedDiff)} from avg
                         </p>
                     </div>
-                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 text-center">
-                        <p className="text-sm text-slate-500 uppercase tracking-wider font-semibold">Accuracy</p>
-                        <p className="text-4xl font-bold text-purple-600 mt-2">{finalStats.accuracy}<span className="text-lg text-slate-400">%</span></p>
-                        <p className={`text-sm mt-2 font-medium ${finalStats.accuracyDiff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    <div className="bg-muted/30 p-6 rounded-xl border border-muted text-center hover:bg-muted/50 transition-colors">
+                        <p className="text-sm text-foreground/60 uppercase tracking-wider font-bold">Accuracy</p>
+                        <p className="text-4xl font-bold text-primary mt-2">{finalStats.accuracy}<span className="text-lg text-foreground/40">%</span></p>
+                        <p className={`text-sm mt-2 font-bold ${finalStats.accuracyDiff >= 0 ? 'text-success' : 'text-red-500'}`}>
                             {finalStats.accuracyDiff >= 0 ? '▲' : '▼'} {Math.abs(finalStats.accuracyDiff)}% from avg
                         </p>
                     </div>
                 </div>
 
-                <div className="border-t border-slate-100 pt-6">
-                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Recent History</h3>
+                <div className="border-t border-muted pt-6">
+                    <h3 className="text-sm font-bold text-foreground/50 uppercase tracking-wider mb-4">Recent History</h3>
                     <div className="space-y-3">
                         {finalStats.globalStats.lastGames.slice().reverse().map((game, i) => (
-                            <div key={i} className="flex justify-between items-center text-sm p-3 hover:bg-slate-50 rounded-lg transition-colors">
-                                <span className="text-slate-500">{game.date}</span>
+                            <div key={i} className="flex justify-between items-center text-sm p-3 hover:bg-muted/40 rounded-lg transition-colors border border-transparent hover:border-muted">
+                                <span className="text-foreground/70 font-medium">{game.date}</span>
                                 <div className="flex space-x-6">
-                                    <span className="font-medium text-slate-700">{game.speed} WPM</span>
-                                    <span className="font-medium text-slate-700">{game.accuracy}% Acc</span>
+                                    <span className="font-bold text-foreground">{game.speed} WPM</span>
+                                    <span className="font-bold text-foreground">{game.accuracy}% Acc</span>
                                 </div>
                             </div>
                         ))}
@@ -379,7 +417,7 @@ export default function Page() {
                 <div className="mt-8 text-center">
                     <button 
                         onClick={() => window.location.reload()} 
-                        className="px-8 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 transition shadow-lg hover:shadow-blue-200 transform hover:-translate-y-0.5 active:translate-y-0"
+                        className="px-8 py-3 bg-primary text-primary-foreground font-bold rounded-full hover:opacity-90 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-1 active:translate-y-0"
                     >
                         Play Again
                     </button>

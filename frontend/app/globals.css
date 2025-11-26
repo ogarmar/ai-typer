@@ -1,26 +1,179 @@
 @import "tailwindcss";
 
+/* =========================================
+   1. CONFIGURACIÓN BASE (Tema LIGHT)
+   "Verde ligero de fondo, Título Azul, Texto Verde"
+   ========================================= */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Fondo: Verde menta muy suave (el "sombreado verde ligero") */
+  --background: #f0fdf4; 
+  --foreground: #1e293b; /* Slate oscuro para lectura */
+  
+  --card: #ffffff;
+  --card-foreground: #1e293b;
+  
+  /* TÍTULO: Azul (como pediste) */
+  --primary: #2563eb; 
+  --primary-foreground: #ffffff;
+  
+  /* ACIERTOS: Verde (como pediste) */
+  --success: #16a34a;
+  
+  --muted: #bbf7d0; /* Verde suave para bordes decorativos */
+  
+  --font-family-base: var(--font-geist-sans);
+  --radius-base: 1rem; 
 }
 
+/* =========================================
+   TEMAS CLÁSICOS
+   ========================================= */
+
+/* DARK */
+[data-theme="dark"] {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --primary: #6366f1; /* Índigo */
+  --primary-foreground: #ffffff;
+  --success: #22c55e; /* Verde neón */
+  --muted: #27272a;
+  --radius-base: 0.75rem;
+}
+
+/* CARIBBEAN */
+[data-theme="caribbean"] {
+  --background: #ecfeff; /* Cyan agua */
+  --foreground: #0e7490;
+  --card: #ffffff; 
+  --card-foreground: #155e75;
+  --primary: #f97316; /* Coral */
+  --primary-foreground: #ffffff;
+  --success: #06b6d4; /* Turquesa */
+  --muted: #67e8f9;
+  --radius-base: 1.5rem;
+}
+
+/* Y2K (2000s) */
+[data-theme="y2k"] {
+  --background: #c0c0c0; /* Plata Windows 95 */
+  --foreground: #000000;
+  --card: #e0e0e0;
+  --card-foreground: #000000;
+  --primary: #ff00ff; /* Magenta */
+  --primary-foreground: #ffffff;
+  --success: #0000ff; /* Azul puro link */
+  --muted: #9ca3af;
+  --font-family-base: var(--font-geist-mono);
+  --radius-base: 0px;
+}
+
+/* MEDIEVAL */
+[data-theme="medieval"] {
+  --background: #fef3c7; /* Pergamino */
+  --foreground: #451a03; /* Tinta */
+  --card: #fde68a;
+  --card-foreground: #451a03;
+  --primary: #991b1b; /* Lacre rojo */
+  --primary-foreground: #fef3c7;
+  --success: #166534; /* Verde bosque oscuro */
+  --muted: #d97706;
+  --font-family-base: "Times New Roman", serif;
+  --radius-base: 0.25rem;
+}
+
+/* =========================================
+   NUEVOS TEMAS "SUPER DIFERENTES"
+   ========================================= */
+
+/* CYBERPUNK (Night City) */
+[data-theme="cyberpunk"] {
+  --background: #020617; /* Azul noche profundo */
+  --foreground: #e2e8f0;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --primary: #facc15; /* Amarillo Cyberpunk */
+  --primary-foreground: #000000;
+  --success: #0ea5e9; /* Cyan neón */
+  --muted: #334155;
+  --font-family-base: "Courier New", monospace; /* Hacker vibe */
+  --radius-base: 0px; 
+  /* Borde especial cortado se haría con clip-path, aquí simulamos con rectos */
+}
+
+/* COFFEE (Cozy & Warm) */
+[data-theme="coffee"] {
+  --background: #28231d; /* Café muy oscuro */
+  --foreground: #d6ccc2; /* Crema */
+  --card: #3e362e; /* Mocha */
+  --card-foreground: #e3d5ca;
+  --primary: #d4a373; /* Latte art */
+  --primary-foreground: #28231d;
+  --success: #a3b18a; /* Verde matcha suave */
+  --muted: #5e503f;
+  --radius-base: 0.5rem;
+}
+
+/* SYNTHWAVE (Retro 80s) */
+[data-theme="synthwave"] {
+  --background: #240046; /* Púrpura espacial */
+  --foreground: #e0aaff; /* Lavanda */
+  --card: #3c096c;
+  --card-foreground: #e0aaff;
+  --primary: #ff9e00; /* Naranja atardecer */
+  --primary-foreground: #240046;
+  --success: #ff006e; /* Rosa radical */
+  --muted: #5a189a;
+  --font-family-base: sans-serif;
+  --radius-base: 2rem;
+}
+
+/* MATRIX (Code Rain) */
+[data-theme="matrix"] {
+  --background: #000000;
+  --foreground: #00ff41; /* Verde terminal */
+  --card: #001100;
+  --card-foreground: #00ff41;
+  --primary: #008f11; /* Verde oscuro */
+  --primary-foreground: #000000;
+  --success: #ccff00; /* Verde lima brillante */
+  --muted: #003b00;
+  --font-family-base: var(--font-geist-mono);
+  --radius-base: 0px;
+}
+
+/* DRACULA (Vampire Dark) */
+[data-theme="dracula"] {
+  --background: #282a36;
+  --foreground: #f8f8f2;
+  --card: #44475a;
+  --card-foreground: #f8f8f2;
+  --primary: #ff79c6; /* Rosa Drácula */
+  --primary-foreground: #282a36;
+  --success: #50fa7b; /* Verde Drácula */
+  --muted: #6272a4;
+  --radius-base: 0.5rem;
+}
+
+/* CONEXIÓN CON TAILWIND v4 */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success); /* NUEVO */
+  --color-muted: var(--muted);
+  
+  --font-sans: var(--font-family-base);
+  --radius-xl: var(--radius-base);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  transition: background 0.5s ease, color 0.5s ease;
 }
