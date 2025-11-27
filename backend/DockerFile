@@ -1,0 +1,25 @@
+# Usamos una versión ligera de Python
+FROM python:3.10-slim
+
+# 1. Instalar dependencias del sistema (Tesseract OCR y sus idiomas)
+# Esto es lo que hace posible el OCR en la nube
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-spa \
+    tesseract-ocr-eng \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configurar directorio de trabajo
+WORKDIR /app
+
+# 2. Copiar e instalar dependencias de Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 3. Copiar el código del backend
+COPY . .
+
+# 4. Comando para iniciar el servidor en producción (usando Gunicorn)
+# Render asigna el puerto automáticamente
+CMD gunicorn -w 1 -b 0.0.0.0:$PORT app:app
