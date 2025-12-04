@@ -1,8 +1,7 @@
 from flask import jsonify, request, Flask
 from flask_cors import CORS
-import openai
 import os
-import dotenv
+import json
 import pdfplumber
 import docx
 import fitz
@@ -10,18 +9,56 @@ import pytesseract
 from PIL import Image
 import io
 import re
+from huggingface_hub import hf_hub_download
+from llama_cpp import Llama
 
-dotenv.load_dotenv()
+# Importación condicional de TOML
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-API_KEY = os.getenv("OPENAI_API_KEY")
-MODEL_NAME = "llama3"
-API_URL = "http://localhost:11434/v1"
-client = openai.Client(base_url=API_URL, api_key=API_KEY)
+print("--- 🚀 INICIANDO SERVIDOR ULTRA-LIGHT... ---")
 
-print(f"--- SERVER READY (Model: {MODEL_NAME}) ---")
+# 1. MODELO ULTRA-LIGERO: Qwen2.5-1.5B-Instruct (Quantized)
+# Pesa solo ~1GB y es rapidísimo en CPU.
+REPO_ID = "bartowski/Qwen2.5-1.5B-Instruct-GGUF"
+FILENAME = "Qwen2.5-1.5B-Instruct-Q6_K.gguf" # Calidad Q6 para compensar el tamaño pequeño
+
+print(f"--- Descargando {FILENAME}... ---")
+try:
+    model_path = hf_hub_download(
+        repo_id=REPO_ID, 
+        filename=FILENAME
+    )
+    print(f"--- Modelo descargado en: {model_path} ---")
+except Exception as e:
+    print(f"Error descargando modelo: {e}")
+    # Fallback si falla la descarga
+    model_path = "" 
+
+# 2. CARGAR MOTOR
+# Ajustamos el contexto a 4096 (Qwen soporta más, pero esto es suficiente y rápido)
+llm = None
+if model_path:
+    try:
+        llm = Llama(
+            model_path=model_path,
+            n_ctx=4096, 
+            n_threads=4,       
+            verbose=False
+        )
+        print(f"--- ✅ MOTOR QWEN LISTO ---")
+    except Exception as e:
+        print(f"Error cargando el modelo: {e}")
+else:
+    print("Warning: No se pudo cargar el modelo. Las funciones de IA no estarán disponibles.")
+
+
+# --- HERRAMIENTAS ---
 
 def sanitize_definition(text):
     REPLACEMENTS = {
@@ -84,262 +121,122 @@ def sanitize_definition(text):
     text = ''.join(char for char in text if char in ALLOWED_CHARS)
     return text
 
-def parse_toon(text):
-    print(f"--- Parsing TOON Response ({len(text)} chars)...")
-    
-    text = text.strip()
-    if not text:
-        print("!!! Empty response")
-        return []
-    
+
+def extract_toon_safely(text):
+    """Extrae formato TOON."""
     concepts = []
-    
-    # Method 1: Strict TOON format
-    pattern = r'concept:\s*(.+?)\s*\n\s*definition:\s*(.+?)\s*(?=---|concept:|\Z)'
-    matches = re.finditer(pattern, text, re.DOTALL | re.IGNORECASE)
+    # Regex flexible para Qwen (a veces añade espacios extra)
+    pattern = r'\[\[CONCEPT\]\]\s*TITLE:\s*(.*?)\s*DEF:\s*(.*?)\s*\[\[END\]\]'
+    matches = re.finditer(pattern, text, re.DOTALL)
     
     for match in matches:
-        titulo = match.group(1).strip()
-        definicion = match.group(2).strip()
-        
-        titulo = re.sub(r'\s+', ' ', titulo)
-        definicion = re.sub(r'\s+', ' ', definicion)
-        
-        if len(titulo) >= 2 and len(definicion) >= 10:
+        title = match.group(1).strip()
+        definition = match.group(2).strip()
+        if title and definition:
             concepts.append({
-                "titulo": titulo,
-                "definicion": sanitize_definition(definicion)
+                "titulo": title,
+                "definicion": sanitize_definition(definition)
             })
-    
-    # Method 2: Fallback - extract from any structured text
-    if not concepts:
-        concepts = extract_from_any_text(text)
-    
-    print(f"--- SUCCESS: {len(concepts)} concepts extracted")
     return concepts
 
-def extract_from_any_text(text):
-    """Fallback method to extract concepts from ANY text format"""
-    concepts = []
-    lines = text.split('\n')
-    
-    current_concept = None
-    current_definition = []
-    
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-            
-        # Skip obvious headers and metadata
-        if any(header in line.lower() for header in ['version', 'abstract', 'introduction', 'conclusion', 'references', 'acknowledg']):
-            continue
-            
-        # Look for concept patterns
-        if (len(line) > 10 and len(line) < 150 and 
-            not line.startswith('*') and not line.startswith('-') and
-            not line.startswith('**') and not line.endswith('**') and
-            not line.isupper() and ':' not in line and
-            not any(word in line.lower() for word in ['pass', 'minutes', 'hours'])):
-            
-            # If we have a previous concept, save it
-            if current_concept and current_definition:
-                definition_text = ' '.join(current_definition)
-                if len(definition_text) >= 10:
-                    concepts.append({
-                        "titulo": current_concept,
-                        "definicion": sanitize_definition(definition_text)
-                    })
-            
-            # Start new concept
-            current_concept = line
-            current_definition = []
-            
-        # Collect definition lines
-        elif current_concept and line:
-            # Skip bullet points and markdown
-            if not line.startswith('*') and not line.startswith('-') and not line.startswith('['):
-                current_definition.append(line)
-    
-    # Don't forget the last concept
-    if current_concept and current_definition:
-        definition_text = ' '.join(current_definition)
-        if len(definition_text) >= 10:
-            concepts.append({
-                "titulo": current_concept,
-                "definicion": sanitize_definition(definition_text)
-            })
-    
-    return concepts
-
-def chunk_text_with_overlap(text, chunk_size=6000, overlap=500):
+def chunk_text(text, chunk_size=3000, overlap=200):
+    # Chunk más pequeño para el modelo pequeño = Más velocidad de respuesta
     chunks = []
     start = 0
-    text_len = len(text)
-    
-    while start < text_len:
+    while start < len(text):
         end = start + chunk_size
-        if end < text_len:
-            boundary = text.rfind(' ', start, end)
-            if boundary != -1 and boundary > start + int(chunk_size * 0.8):
-                end = boundary
-        
+        if end < len(text):
+            boundary = text.rfind('.', start, end)
+            if boundary == -1: boundary = text.rfind('\n', start, end)
+            if boundary != -1 and boundary > start + (chunk_size * 0.7): end = boundary + 1
         chunks.append(text[start:end])
-        start = end - overlap 
-        if start >= end:
-            start = end
-            
+        start = end - overlap
+        if start >= end: start = end
     return chunks
-
-def get_ai_concepts(client, chunk, max_retries=3):
-    """Multiple strategies to get concepts from AI"""
-    
-    strategies = [
-        # Strategy 1: Ultra-strict format
-        """OUTPUT MUST BE:
-concept: [Name]
-definition: [Description]
----
-concept: [Name] 
-definition: [Description]
----
-NO OTHER TEXT. START NOW:""",
-        
-        # Strategy 2: Simple command
-        """Extract 10 key concepts in this format:
-concept: name
-definition: description
----""",
-        
-        # Strategy 3: Direct command
-        """List main concepts as:
-concept: Concept Name
-definition: Explanation here
----"""
-    ]
-    
-    for attempt in range(max_retries):
-        strategy = strategies[attempt % len(strategies)]
-        
-        try:
-            prompt = f"""EXTRACT KEY CONCEPTS FROM THIS TEXT. {strategy}
-
-TEXT:
-{chunk}"""
-
-            response = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model=MODEL_NAME,
-                temperature=0.1,
-                max_tokens=3000
-            )
-            
-            response_text = str(response.choices[0].message.content)
-            print(f"--- ATTEMPT {attempt + 1} RESPONSE ---")
-            print(response_text)
-            print("--- END RESPONSE ---")
-            
-            concepts = parse_toon(response_text)
-            if concepts:
-                return concepts
-                
-        except Exception as e:
-            print(f"!!! AI Error: {e}")
-    
-    return []
 
 @app.route('/api/analizar', methods=['POST'])
 def analizar():
     file = request.files.get('file')
-    if not file:
-        return jsonify({"error": "No file"}), 400
+    if not file: return jsonify({"error": "No file"}), 400
     
-    print(f"\n>>> File Received: {file.filename}")
+    print(f"\n>>> Procesando: {file.filename}")
     text = ""
     
     try:
+        # Lógica de lectura
         if file.filename.endswith('.pdf'):
-            file.seek(0)
             with pdfplumber.open(file) as pdf:
-                for page in pdf.pages:
-                    pt = page.extract_text()
-                    if pt:
-                        text += pt + "\n"
+                for page in pdf.pages: text += (page.extract_text() or "") + "\n"
             
-            if len(text.strip()) < 100:
-                print("--- PLAN B: Activating OCR ---")
-                text = "" 
+            # OCR Simple
+            if len(text.strip()) < 50:
+                print("--- Activando OCR ---")
                 file.seek(0)
-                with fitz.open(stream=file.read(), filetype="pdf") as doc_fitz:
-                    for page_num in range(len(doc_fitz)):
-                        page = doc_fitz.load_page(page_num)
-                        images = page.get_images(full=True)
-                        if not images: 
-                            try:
-                                pix = page.get_pixmap()
-                                img_data = pix.tobytes("png")
-                                pil_img = Image.open(io.BytesIO(img_data))
-                                text += pytesseract.image_to_string(pil_img, lang="eng+spa") + "\n"
-                            except:
-                                pass
-                        else:
-                            for img in images:
-                                try:
-                                    xref = img[0]
-                                    base = doc_fitz.extract_image(xref)
-                                    pil_img = Image.open(io.BytesIO(base["image"]))
-                                    text += pytesseract.image_to_string(pil_img, lang="eng+spa") + "\n"
-                                except:
-                                    pass
-        
+                doc = fitz.open(stream=file.read(), filetype="pdf")
+                for page in doc:
+                    text += page.get_text() + "\n"
+                    if len(text) < 50: # Fallback a Tesseract si es necesario
+                        try:
+                            pix = page.get_pixmap()
+                            img = Image.open(io.BytesIO(pix.tobytes("png")))
+                            text += pytesseract.image_to_string(img) + "\n"
+                        except: pass
+
         elif file.filename.endswith('.docx'):
             doc = docx.Document(file)
-            for para in doc.paragraphs:
-                text += para.text + "\n"
+            for p in doc.paragraphs: text += p.text + "\n"
         elif file.filename.endswith('.txt'):
             text = file.read().decode('utf-8')
             
     except Exception as e:
-        print(f"!!! Read Error: {e}")
         return jsonify({"error": str(e)}), 500
 
-    if not text.strip():
-        return jsonify({"error": "Empty text extracted"}), 400
+    if not text.strip(): return jsonify({"error": "No text found"}), 400
     
-    # If AI fails completely, extract concepts directly from text
-    if len(text) > 5000:
-        text = text[:5000]  # Limit text size
-    
-    chunks = chunk_text_with_overlap(text)
+    # --- PROCESAMIENTO IA ---
+    if not llm:
+        return jsonify({"error": "Model not loaded. Cannot process text."}), 500
+
+    chunks = chunk_text(text)
     all_concepts = []
     
+    # Prompt ajustado para Qwen (formato ChatML)
+    PROMPT = """You are a professor. Extract key concepts from the text.
+RULES:
+1. Keep definitions SHORT and CONCISE.
+2. Output in the SAME language as the text.
+3. Use this format EXACTLY:
+
+[[CONCEPT]]
+TITLE: Concept Name
+DEF: Short definition
+[[END]]
+"""
+
     for i, chunk in enumerate(chunks):
-        if not chunk.strip():
-            continue
-        print(f"--- Processing Chunk {i+1}/{len(chunks)} ---")
+        print(f"--- Analizando parte {i+1}/{len(chunks)} ---")
         
-        concepts = get_ai_concepts(client, chunk)
-        all_concepts.extend(concepts)
+        try:
+            output = llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": PROMPT},
+                    {"role": "user", "content": f"TEXT:\n{chunk}"}
+                ],
+                max_tokens=1024,
+                temperature=0.2,
+            )
+            
+            response = output['choices'][0]['message']['content']
+            concepts = extract_toon_safely(response)
+            all_concepts.extend(concepts)
+            
+        except Exception as e:
+            print(f"Error IA: {e}")
+
+    # Eliminar duplicados
+    unique_concepts = {c['titulo']: c for c in all_concepts}.values()
     
-    # If AI completely failed, use direct text extraction
-    if not all_concepts:
-        print("--- USING FALLBACK EXTRACTION ---")
-        all_concepts = extract_from_any_text(text)
-    
-    # Remove duplicates
-    unique_concepts = []
-    seen_titles = set()
-    for concept in all_concepts:
-        if concept["titulo"] not in seen_titles:
-            unique_concepts.append(concept)
-            seen_titles.add(concept["titulo"])
-    
-    print(f"\n=== FINAL RESULT: {len(unique_concepts)} total concepts ===\n")
-    
-    if len(unique_concepts) == 0:
-        return jsonify({"error": "No concepts extracted from file"}), 400
-    
-    return jsonify({"concepts": unique_concepts})
+    return jsonify({"concepts": list(unique_concepts)})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0', port=5000) # Usamos puerto 5000 por defecto para desarrollo local
